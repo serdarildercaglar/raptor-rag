@@ -39,22 +39,22 @@ class ProductionTester:
             "modern edebiyatın özellikleri nelerdir?"
         ]
         
-        # Test sync version
-        print("  📊 Sync Version:")
+        # Test individual async calls
+        print("  📊 Individual Async Calls:")
         start = time.time()
         for i, query in enumerate(user_queries):
-            context = self.RA.retrieve(query)
+            context = await self.RA.retrieve_async(query)
             print(f"    Q{i+1}: {len(context)} chars")
-        sync_time = time.time() - start
-        print(f"    ⏱️ Sync Total: {sync_time:.2f}s")
+        individual_time = time.time() - start
+        print(f"    ⏱️ Individual Total: {individual_time:.2f}s")
         
         # Test async batch version  
         print("  📊 Async Batch Version:")
         start = time.time()
         contexts = await self.RA.retrieve_batch(user_queries)
-        async_time = time.time() - start
-        print(f"    ⏱️ Async Batch: {async_time:.2f}s")
-        print(f"    🚀 Speedup: {sync_time/async_time:.1f}x faster")
+        batch_time = time.time() - start
+        print(f"    ⏱️ Async Batch: {batch_time:.2f}s")
+        print(f"    🚀 Speedup: {individual_time/batch_time:.1f}x faster")
         
         for i, (query, context) in enumerate(zip(user_queries, contexts)):
             print(f"    Q{i+1}: {len(context)} chars")

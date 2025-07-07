@@ -551,17 +551,29 @@ class TreeRetriever(BaseRetriever):
     ) -> Union[str, Tuple[str, List[Dict]]]:
         """
         Synchronous retrieve method (backwards compatibility).
-        Internally uses async method with asyncio.
+        WARNING: Avoid using this inside async functions - use retrieve_async instead.
         """
         try:
             loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in async context - this should not happen
+                raise RuntimeError(
+                    "Cannot call synchronous retrieve() from async context. "
+                    "Use retrieve_async() instead."
+                )
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            pass  # No loop running, this is fine
         
-        return loop.run_until_complete(
-            self.retrieve_async(
-                query, start_layer, num_layers, top_k,
-                max_tokens, collapse_tree, return_layer_information
+        # Create new event loop for sync operation
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(
+                self.retrieve_async(
+                    query, start_layer, num_layers, top_k,
+                    max_tokens, collapse_tree, return_layer_information
+                )
             )
-        )
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)

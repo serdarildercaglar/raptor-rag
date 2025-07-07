@@ -222,6 +222,7 @@ class RetrievalAugmentation:
     ) -> Union[str, Tuple[str, List[Dict]]]:
         """
         Retrieves relevant context for a given question using the TreeRetriever instance.
+        WARNING: Avoid using this inside async functions - use retrieve_async instead.
 
         Args:
             question (str): The question/query to retrieve context for.
@@ -237,11 +238,24 @@ class RetrievalAugmentation:
 
         Raises:
             ValueError: If the TreeRetriever instance has not been initialized.
+            RuntimeError: If called from async context.
         """
         if self.retriever is None:
             raise ValueError(
                 "The TreeRetriever instance has not been initialized. Call 'add_documents' first."
             )
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                raise RuntimeError(
+                    "Cannot call synchronous retrieve() from async context. "
+                    "Use retrieve_async() instead."
+                )
+        except RuntimeError as e:
+            if "async context" in str(e):
+                raise e
+            pass  # No loop running, this is fine
 
         return self.retriever.retrieve(
             question,
