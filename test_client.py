@@ -94,6 +94,37 @@ class RaptorClient:
                 error_text = await response.text()
                 raise Exception(f"Batch retrieve failed: {response.status} - {error_text}")
 
+def format_query_context(query: str, context: str, max_preview: int = 200):
+    """Format query and context for display"""
+    print(f"\n📝 Query: {query}")
+    print(f"📄 Context ({len(context)} chars):")
+    print("=" * 60)
+    if len(context) > max_preview:
+        print(f"{context[:max_preview]}...")
+        print(f"[... {len(context) - max_preview} more characters]")
+    else:
+        print(context)
+    print("=" * 60)
+
+def format_service_info(health_data: Dict[str, Any]):
+    """Format service information"""
+    print("🏥 Service Health:")
+    print(f"   Status: {'🟢' if health_data['status'] == 'healthy' else '🔴'} {health_data['status']}")
+    print(f"   Uptime: {health_data.get('uptime_seconds', 0):.1f}s")
+    print(f"   Total Requests: {health_data.get('total_requests', 0)}")
+    print(f"   Avg Response Time: {health_data.get('average_response_time_ms', 0):.1f}ms")
+    print(f"   Embedding Service: {'🟢' if 'healthy' in health_data.get('embedding_service_status', '') else '🔴'}")
+
+def format_performance_metrics(processing_time: float, context_length: int, query_count: int = 1):
+    """Format performance metrics"""
+    print(f"⚡ Performance:")
+    print(f"   Processing Time: {processing_time:.1f}ms")
+    print(f"   Context Length: {context_length:,} chars")
+    if query_count > 1:
+        print(f"   Queries: {query_count}")
+        print(f"   Avg per Query: {processing_time/query_count:.1f}ms")
+        print(f"   Throughput: {query_count/(processing_time/1000):.1f} queries/sec")
+
 # Agentic AI Tool Integration Example
 class AgenticAIRAGTool:
     """
@@ -169,20 +200,21 @@ async def test_basic_functionality():
         # Health check
         print("\n1️⃣ Health Check:")
         health = await client.health_check()
-        print(f"   Status: {health['status']}")
-        print(f"   Uptime: {health['uptime_seconds']:.1f}s")
-        print(f"   Embedding Service: {health['embedding_service_status']}")
+        format_service_info(health)
         
         # Single retrieve
         print("\n2️⃣ Single Retrieve:")
+        query = "edebiyat nedir?"
         start = time.time()
-        result = await client.retrieve("edebiyat nedir?")
+        result = await client.retrieve(query)
         end = time.time()
         
-        print(f"   Query: {result['query']}")
-        print(f"   Context Length: {result['context_length']} chars")
-        print(f"   Processing Time: {result['processing_time_ms']:.1f}ms")
-        print(f"   Client Time: {(end-start)*1000:.1f}ms")
+        format_query_context(result['query'], result['context'])
+        format_performance_metrics(
+            result['processing_time_ms'], 
+            result['context_length']
+        )
+        print(f"   Client Round-trip: {(end-start)*1000:.1f}ms")
         
         # Batch retrieve
         print("\n3️⃣ Batch Retrieve:")
@@ -196,11 +228,18 @@ async def test_basic_functionality():
         batch_result = await client.retrieve_batch(queries)
         end = time.time()
         
-        print(f"   Total Queries: {batch_result['total_queries']}")
-        print(f"   Total Processing Time: {batch_result['total_processing_time_ms']:.1f}ms")
-        print(f"   Average Time: {batch_result['average_time_ms']:.1f}ms")
-        print(f"   Client Time: {(end-start)*1000:.1f}ms")
-        print(f"   Throughput: {batch_result['total_queries']/(batch_result['total_processing_time_ms']/1000):.1f} queries/sec")
+        print(f"\n📊 Batch Results:")
+        for i, result in enumerate(batch_result['results']):
+            print(f"\n   Query {i+1}: {result['query']}")
+            print(f"   Context: {result['context_length']} chars")
+            print(f"   Preview: {result['context'][:100]}...")
+        
+        format_performance_metrics(
+            batch_result['total_processing_time_ms'],
+            sum(r['context_length'] for r in batch_result['results']),
+            batch_result['total_queries']
+        )
+        print(f"   Client Round-trip: {(end-start)*1000:.1f}ms")
 
 async def test_agentic_ai_integration():
     """Test Agentic AI integration"""
@@ -216,17 +255,30 @@ async def test_agentic_ai_integration():
     
     for question in test_questions:
         print(f"\n🔍 Researching: {question}")
+        print("=" * 50)
         
         start = time.time()
         research_result = await tool.research_topic(question)
         end = time.time()
         
-        print(f"   Generated Queries: {len(research_result['research_queries'])}")
-        print(f"   Total Contexts: {research_result['total_contexts']}")
-        print(f"   Total Characters: {research_result['summary']['total_characters']:,}")
+        print(f"🎯 Original Question: {research_result['original_question']}")
+        print(f"📝 Generated Queries: {len(research_result['research_queries'])}")
+        
+        # Show each query and its context
+        for i, context_data in enumerate(research_result['contexts']):
+            format_query_context(
+                context_data['query'], 
+                context_data['context'],
+                max_preview=150
+            )
+        
+        # Summary metrics
+        print(f"\n📊 Research Summary:")
+        summary = research_result['summary']
+        print(f"   Total Characters: {summary['total_characters']:,}")
         print(f"   Processing Time: {research_result['total_processing_time_ms']:.1f}ms")
         print(f"   End-to-end Time: {(end-start)*1000:.1f}ms")
-        print(f"   Throughput: {research_result['summary']['queries_per_second']:.1f} queries/sec")
+        print(f"   Throughput: {summary['queries_per_second']:.1f} queries/sec")
 
 async def test_performance_load():
     """Test performance under load"""
@@ -250,7 +302,8 @@ async def test_performance_load():
                 "queries": len(queries),
                 "processing_time_ms": result['total_processing_time_ms'],
                 "total_time_ms": (end - start) * 1000,
-                "success": True
+                "success": True,
+                "total_chars": sum(r['context_length'] for r in result['results'])
             }
     
     # Simulate 5 concurrent agentic AI users
@@ -265,27 +318,37 @@ async def test_performance_load():
     
     total_queries = sum(r['queries'] for r in results)
     avg_processing_time = sum(r['processing_time_ms'] for r in results) / len(results)
+    total_chars = sum(r['total_chars'] for r in results)
     
-    print(f"   Results:")
-    print(f"     Total Users: {len(results)}")
-    print(f"     Total Queries: {total_queries}")
-    print(f"     Total Time: {total_time:.2f}s")
-    print(f"     Average Processing Time: {avg_processing_time:.1f}ms")
-    print(f"     System Throughput: {total_queries/total_time:.1f} queries/sec")
-    print(f"     User Throughput: {len(results)/total_time:.1f} users/sec")
+    print(f"\n📊 Load Test Results:")
+    print(f"   Total Users: {len(results)}")
+    print(f"   Total Queries: {total_queries}")
+    print(f"   Total Characters: {total_chars:,}")
+    print(f"   Total Time: {total_time:.2f}s")
+    print(f"   Average Processing Time: {avg_processing_time:.1f}ms")
+    print(f"   System Throughput: {total_queries/total_time:.1f} queries/sec")
+    print(f"   User Throughput: {len(results)/total_time:.1f} users/sec")
+    
+    # Show individual user results
+    print(f"\n👥 Individual User Results:")
+    for result in results:
+        print(f"   User {result['user_id']}: {result['queries']} queries, "
+              f"{result['processing_time_ms']:.1f}ms processing, "
+              f"{result['total_chars']:,} chars")
 
 async def main():
     """Run all tests"""
     print("🔬 RAPTOR Service Client Tests")
-    print("=" * 50)
+    print("=" * 60)
     
     try:
         await test_basic_functionality()
         await test_agentic_ai_integration()
         await test_performance_load()
         
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("✅ All tests completed successfully!")
+        print("🚀 RAPTOR Service is ready for Agentic AI integration!")
         
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
