@@ -21,6 +21,10 @@ LOG_LEVEL=INFO
 EOF
 fi
 
+# 🔒 Use only RTX 3090 (GPU 1)
+export CUDA_VISIBLE_DEVICES=1
+echo "🎯 CUDA_VISIBLE_DEVICES set to 1 (using RTX 3090 only)"
+
 # Start the service
 echo "🔥 Starting embedding service on port 8008..."
 python server.py
