@@ -19,7 +19,9 @@ import threading
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, validator, ValidationError
 from vllm import LLM
 import torch
 try:
@@ -443,9 +445,33 @@ class ProductionEmbeddingServer:
 # =============================================================================
 
 class EmbeddingRequest(BaseModel):
-    input: List[str] = Field(..., min_items=1, max_items=1000)
-    model: str
-    encoding_format: Optional[str] = "float"
+    input: List[str] = Field(..., min_items=1, max_items=1000, description="List of texts to embed")
+    model: str = Field(..., description="Model name for embedding")
+    encoding_format: Optional[str] = Field(default="float", description="Encoding format")
+    
+    @validator('input')
+    def validate_input_texts(cls, v):
+        """Validate input texts"""
+        if not v:
+            raise ValueError("Input cannot be empty")
+        
+        # Check individual text lengths
+        for i, text in enumerate(v):
+            if not isinstance(text, str):
+                raise ValueError(f"Input item {i} must be a string")
+            if len(text.strip()) == 0:
+                raise ValueError(f"Input item {i} cannot be empty or whitespace only")
+            if len(text) > 10000:  # 10k chars max per text
+                raise ValueError(f"Input item {i} too long (max 10000 characters)")
+        
+        return v
+    
+    @validator('model')
+    def validate_model(cls, v):
+        """Validate model name"""
+        if not v or not isinstance(v, str):
+            raise ValueError("Model name must be a non-empty string")
+        return v
 
 class EmbeddingData(BaseModel):
     object: str = "embedding"
@@ -495,6 +521,60 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle pydantic validation errors"""
+    errors = []
+    for error in exc.errors():
+        field = '.'.join(str(loc) for loc in error['loc'])
+        message = error['msg']
+        errors.append(f"{field}: {message}")
+    
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": "Input validation failed",
+            "errors": errors,
+            "type": "validation_error"
+        }
+    )
+
+@app.exception_handler(ValidationError)
+async def pydantic_validation_handler(request: Request, exc: ValidationError):
+    """Handle pydantic validation errors"""
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": "Request validation failed",
+            "errors": [str(error) for error in exc.errors()],
+            "type": "validation_error"
+        }
+    )
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    """Handle value errors"""
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": str(exc),
+            "type": "value_error"
+        }
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler"""
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "type": "internal_error"
+        }
+    )
 
 # =============================================================================
 # ROUTES
@@ -548,6 +628,20 @@ async def create_embeddings(request: EmbeddingRequest):
     if not server_instance or not server_instance.llm:
         raise HTTPException(status_code=503, detail="Server not ready")
     
+    # Validate model name matches server model
+    if request.model != server_instance.config.model_name:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Model '{request.model}' not supported. Available model: '{server_instance.config.model_name}'"
+        )
+    
+    # Check batch size limit
+    if len(request.input) > server_instance.config.max_batch_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch size {len(request.input)} exceeds maximum {server_instance.config.max_batch_size}"
+        )
+    
     async with server_instance.semaphore:
         start_time = time.perf_counter()
         
@@ -582,7 +676,16 @@ async def create_embeddings(request: EmbeddingRequest):
             server_instance.metrics.record_request(latency, 0, False)
             
             logger.error(f"Embedding request failed: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            
+            # Handle specific error types
+            error_msg = str(e)
+            if "GPU memory" in error_msg:
+                raise HTTPException(status_code=503, detail="Server temporarily overloaded. Please try again.")
+            elif "Circuit breaker" in error_msg:
+                raise HTTPException(status_code=503, detail="Service temporarily unavailable due to errors. Please try again later.")
+            else:
+                raise HTTPException(status_code=500, detail="Internal server error occurred during embedding generation.")
+
 
 @app.post("/embeddings/batch")
 async def create_embeddings_batch(texts: List[str]):
@@ -590,11 +693,24 @@ async def create_embeddings_batch(texts: List[str]):
     if not server_instance or not server_instance.llm:
         raise HTTPException(status_code=503, detail="Server not ready")
     
+    # Input validation
+    if not texts:
+        raise HTTPException(status_code=400, detail="Input cannot be empty")
+    
     if len(texts) > server_instance.config.max_batch_size:
         raise HTTPException(
             status_code=400,
             detail=f"Batch size {len(texts)} exceeds maximum {server_instance.config.max_batch_size}"
         )
+    
+    # Validate individual texts
+    for i, text in enumerate(texts):
+        if not isinstance(text, str):
+            raise HTTPException(status_code=400, detail=f"Input item {i} must be a string")
+        if len(text.strip()) == 0:
+            raise HTTPException(status_code=400, detail=f"Input item {i} cannot be empty or whitespace only")
+        if len(text) > 10000:  # 10k chars max per text
+            raise HTTPException(status_code=400, detail=f"Input item {i} too long (max 10000 characters)")
     
     async with server_instance.semaphore:
         start_time = time.perf_counter()
@@ -627,7 +743,16 @@ async def create_embeddings_batch(texts: List[str]):
             server_instance.metrics.record_request(latency, 0, False)
             
             logger.error(f"Batch request failed: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            
+            # Handle specific error types
+            error_msg = str(e)
+            if "GPU memory" in error_msg:
+                raise HTTPException(status_code=503, detail="Server temporarily overloaded. Please try again.")
+            elif "Circuit breaker" in error_msg:
+                raise HTTPException(status_code=503, detail="Service temporarily unavailable due to errors. Please try again later.")
+            else:
+                raise HTTPException(status_code=500, detail="Internal server error occurred during batch processing.")
+
 
 # =============================================================================
 # MAIN

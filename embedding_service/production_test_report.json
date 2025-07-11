@@ -1,22 +1,22 @@
 {
   "summary": {
     "total_tests": 9,
-    "passed_tests": 8,
-    "failed_tests": 1,
-    "success_rate": 88.88888888888889,
-    "overall_status": "FAIL"
+    "passed_tests": 9,
+    "failed_tests": 0,
+    "success_rate": 100.0,
+    "overall_status": "PASS"
   },
   "performance": {
     "latency": {
-      "avg_ms": 64.41726684570312,
-      "p95_ms": 251.27148628234863,
-      "max_ms": 251.27148628234863,
-      "min_ms": 0.8840560913085938
+      "avg_ms": 201.3589382171631,
+      "p95_ms": 715.6107425689697,
+      "max_ms": 715.6107425689697,
+      "min_ms": 0.8800029754638672
     },
     "throughput": {
-      "avg_per_sec": 175.21989568510205,
-      "max_per_sec": 255.4589583828196,
-      "min_per_sec": 71.21277050911573
+      "avg_per_sec": 160.7967690577695,
+      "max_per_sec": 214.4053162939297,
+      "min_per_sec": 59.881758517255804
     }
   },
   "baseline_comparison": {
@@ -29,45 +29,45 @@
     {
       "test": "connectivity",
       "status": "PASS",
-      "duration": 0.0032622814178466797,
+      "duration": 0.0033979415893554688,
       "details": {
         "status": "healthy",
         "model": "intfloat/multilingual-e5-large",
-        "response_time_ms": 3.2622814178466797,
+        "response_time_ms": 3.3979415893554688,
         "has_gpu_info": true,
         "circuit_breaker_state": "CLOSED",
-        "gpu_memory_used_mb": 1226,
+        "gpu_memory_used_mb": 1899,
         "gpu_memory_total_mb": 4096,
-        "gpu_utilization_percent": 29.93316650390625
+        "gpu_utilization_percent": 46.380615234375
       },
       "error": null
     },
     {
       "test": "metrics_endpoint",
       "status": "PASS",
-      "duration": 0.0008840560913085938,
+      "duration": 0.0008800029754638672,
       "details": {
-        "response_time_ms": 0.8840560913085938,
+        "response_time_ms": 0.8800029754638672,
         "has_performance_data": true,
         "has_memory_data": true,
-        "total_requests": 51,
+        "total_requests": 0,
         "error_rate_percent": 0.0,
-        "uptime_seconds": 435.541366815567,
-        "system_memory_percent": 22.4
+        "uptime_seconds": 27.037275791168213,
+        "system_memory_percent": 32.2
       },
       "error": null
     },
     {
       "test": "single_embedding",
       "status": "PASS",
-      "duration": 0.027523279190063477,
+      "duration": 0.7156107425689697,
       "details": {
-        "response_time_ms": 27.523279190063477,
+        "response_time_ms": 715.6107425689697,
         "embedding_dimension": 1024,
         "embedding_type": "float",
         "response_size_bytes": 21794,
         "latency_acceptable": true,
-        "embedding_magnitude": 0.9999999881425694,
+        "embedding_magnitude": 0.9999999881425699,
         "embedding_normalized": true
       },
       "error": null
@@ -75,12 +75,12 @@
     {
       "test": "batch_embedding",
       "status": "PASS",
-      "duration": 0.03914523124694824,
+      "duration": 0.046640634536743164,
       "details": {
-        "response_time_ms": 39.14523124694824,
+        "response_time_ms": 46.640634536743164,
         "input_texts": 10,
         "output_embeddings": 10,
-        "throughput_texts_per_sec": 255.4589583828196,
+        "throughput_texts_per_sec": 214.4053162939297,
         "avg_embedding_dimension": 1024,
         "throughput_acceptable": true
       },
@@ -89,32 +89,32 @@
     {
       "test": "concurrent_load",
       "status": "PASS",
-      "duration": 0.14042425155639648,
+      "duration": 0.16699576377868652,
       "details": {
         "total_requests": 10,
         "successful_requests": 10,
         "failed_requests": 0,
         "success_rate_percent": 100.0,
-        "total_duration_sec": 0.14042425155639648,
-        "throughput_requests_per_sec": 71.21277050911573,
+        "total_duration_sec": 0.16699576377868652,
+        "throughput_requests_per_sec": 59.881758517255804,
         "error_rate_acceptable": true,
-        "avg_latency_ms": 79.79111671447754,
-        "p95_latency_ms": 138.87596130371094,
-        "max_latency_ms": 138.87596130371094,
-        "min_latency_ms": 18.673419952392578
+        "avg_latency_ms": 91.75684452056885,
+        "p95_latency_ms": 165.32158851623535,
+        "max_latency_ms": 165.32158851623535,
+        "min_latency_ms": 18.53203773498535
       },
       "error": null
     },
     {
       "test": "large_batch_processing",
       "status": "PASS",
-      "duration": 0.25127148628234863,
+      "duration": 0.2402653694152832,
       "details": {
         "input_texts": 50,
         "output_embeddings": 50,
-        "response_time_ms": 251.27148628234863,
-        "throughput_texts_per_sec": 198.98795816337085,
-        "avg_text_length": 49.1,
+        "response_time_ms": 240.2653694152832,
+        "throughput_texts_per_sec": 208.103232362123,
+        "avg_text_length": 43.42,
         "processing_acceptable": true
       },
       "error": null
@@ -122,42 +122,42 @@
     {
       "test": "memory_stress",
       "status": "PASS",
-      "duration": 0.10129523277282715,
+      "duration": 0.0996088981628418,
       "details": {
-        "initial_memory_percent": 22.4,
-        "final_memory_percent": 22.4,
+        "initial_memory_percent": 33.0,
+        "final_memory_percent": 33.0,
         "memory_increase_percent": 0.0,
-        "processing_time_sec": 0.09949946403503418,
+        "processing_time_sec": 0.09811735153198242,
         "request_successful": true,
         "memory_acceptable": true,
-        "gpu_0_memory_percent": 29.83551025390625,
-        "gpu_1_memory_percent": 7.341766357421875
+        "gpu_0_memory_percent": 46.3836669921875,
+        "gpu_1_memory_percent": 7.342274983723958
       },
       "error": null
     },
     {
       "test": "error_handling",
-      "status": "FAIL",
-      "duration": 1.3955752849578857,
+      "status": "PASS",
+      "duration": 0.002586841583251953,
       "details": {
         "total_error_tests": 4,
-        "gracefully_handled": 2,
-        "error_handling_rate_percent": 50.0,
+        "gracefully_handled": 4,
+        "error_handling_rate_percent": 100.0,
         "test_results": {
           "empty_input": {
-            "status_code": 422,
+            "status_code": 400,
             "handled_gracefully": true
           },
           "oversized_batch": {
-            "status_code": 200,
-            "handled_gracefully": false
+            "status_code": 400,
+            "handled_gracefully": true
           },
           "invalid_model": {
-            "status_code": 200,
-            "handled_gracefully": false
+            "status_code": 400,
+            "handled_gracefully": true
           },
           "malformed_json": {
-            "status_code": 422,
+            "status_code": 400,
             "handled_gracefully": true
           }
         }
@@ -167,18 +167,18 @@
     {
       "test": "sustained_load",
       "status": "PASS",
-      "duration": 30.002625703811646,
+      "duration": 30.05935573577881,
       "details": {
-        "test_duration_sec": 30.002625703811646,
-        "total_requests": 459,
-        "completed_requests": 459,
+        "test_duration_sec": 30.05935573577881,
+        "total_requests": 449,
+        "completed_requests": 449,
         "failed_requests": 0,
         "success_rate_percent": 100.0,
-        "avg_throughput_requests_per_sec": 15.298661008249253,
-        "completed_throughput_requests_per_sec": 15.298661008249253,
-        "avg_latency_ms": 15.18680171509454,
-        "p95_latency_ms": 16.904592514038086,
-        "max_latency_ms": 20.838022232055664
+        "avg_throughput_requests_per_sec": 14.93711322181027,
+        "completed_throughput_requests_per_sec": 14.93711322181027,
+        "avg_latency_ms": 16.758673971639176,
+        "p95_latency_ms": 19.737720489501953,
+        "max_latency_ms": 25.622844696044922
       },
       "error": null
     }
