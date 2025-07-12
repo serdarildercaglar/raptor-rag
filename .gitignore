@@ -31,3 +31,5 @@ finetuning_ckpts/
 assertion.log
 *.log
 *.db
+*.txt
+vectordb/
