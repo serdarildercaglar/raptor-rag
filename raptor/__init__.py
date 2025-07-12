@@ -7,8 +7,10 @@ from .RetrievalAugmentation import (RetrievalAugmentation,
                                     RetrievalAugmentationConfig)
 from .Retrievers import BaseRetriever
 from .SummarizationModels import (BaseSummarizationModel,
-                                  GPT3SummarizationModel,
-                                  GPT3TurboSummarizationModel)
+                                  GPT41SummarizationModel,
+                                  GPT41MiniSummarizationModel,
+                                  GPT4OSummarizationModel,
+                                  GPT4OMiniSummarizationModel)
 from .tree_builder import TreeBuilder, TreeBuilderConfig
 from .tree_retriever import TreeRetriever, TreeRetrieverConfig
 from .tree_structures import Node, Tree

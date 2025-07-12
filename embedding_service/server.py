@@ -304,8 +304,8 @@ class BatchProcessor:
         # Add query prefix for E5 model
         formatted_texts = []
         for text in texts:
-            if not text.startswith(("query:", "passage:")):
-                text = f"query: {text}"
+            if not text.startswith(("query:")):
+                text = f"passage: {text}"
             formatted_texts.append(text)
         
         # Check memory before processing

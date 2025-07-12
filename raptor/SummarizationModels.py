@@ -14,8 +14,8 @@ class BaseSummarizationModel(ABC):
         pass
 
 
-class GPT3TurboSummarizationModel(BaseSummarizationModel):
-    def __init__(self, model="gpt-3.5-turbo"):
+class GPT41SummarizationModel(BaseSummarizationModel):
+    def __init__(self, model="gpt-4.1"):
 
         self.model = model
 
@@ -31,7 +31,7 @@ class GPT3TurboSummarizationModel(BaseSummarizationModel):
                     {"role": "system", "content": "You are a helpful assistant."},
                     {
                         "role": "user",
-                        "content": f"Write a summary of the following, including as many key details as possible: {context}:",
+                        "content": f"Write a summary of the following in Turkish, including as many key details as possible: {context}:",
                     },
                 ],
                 max_tokens=max_tokens,
@@ -42,10 +42,10 @@ class GPT3TurboSummarizationModel(BaseSummarizationModel):
         except Exception as e:
             print(e)
             return e
+        
 
-
-class GPT3SummarizationModel(BaseSummarizationModel):
-    def __init__(self, model="text-davinci-003"):
+class GPT41MiniSummarizationModel(BaseSummarizationModel):
+    def __init__(self, model="gpt-4.1-mini"):
 
         self.model = model
 
@@ -61,7 +61,37 @@ class GPT3SummarizationModel(BaseSummarizationModel):
                     {"role": "system", "content": "You are a helpful assistant."},
                     {
                         "role": "user",
-                        "content": f"Write a summary of the following, including as many key details as possible: {context}:",
+                        "content": f"Write a summary of the following in Turkish, including as many key details as possible: {context}:",
+                    },
+                ],
+                max_tokens=max_tokens,
+            )
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            print(e)
+            return e        
+
+
+class GPT4OSummarizationModel(BaseSummarizationModel):
+    def __init__(self, model="gpt-4o"):
+
+        self.model = model
+
+    @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
+    def summarize(self, context, max_tokens=500, stop_sequence=None):
+
+        try:
+            client = OpenAI()
+
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {
+                        "role": "user",
+                        "content": f"Write a summary of the following in Turkish, including as many key details as possible: {context}:",
                     },
                 ],
                 max_tokens=max_tokens,
@@ -72,7 +102,6 @@ class GPT3SummarizationModel(BaseSummarizationModel):
         except Exception as e:
             print(e)
             return e
-
 
 class GPT4OMiniSummarizationModel(BaseSummarizationModel):
     def __init__(self, model="gpt-4o-mini"):
