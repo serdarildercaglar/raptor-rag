@@ -22,7 +22,7 @@ class FaissRetrieverConfig:
         embedding_model=None,
         question_embedding_model=None,
         top_k=5,
-        tokenizer=tiktoken.get_encoding("cl100k_base"),
+        tokenizer=tiktoken.get_encoding("o200k_base"),
         embedding_model_string=None,
         use_gpu=True,  # New parameter for GPU usage
     ):

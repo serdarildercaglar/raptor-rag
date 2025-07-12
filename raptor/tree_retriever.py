@@ -32,7 +32,7 @@ class TreeRetrieverConfig:
         start_layer=None,
     ):
         if tokenizer is None:
-            tokenizer = tiktoken.get_encoding("cl100k_base")
+            tokenizer = tiktoken.get_encoding("o200k_base")
         self.tokenizer = tokenizer
 
         if threshold is None:

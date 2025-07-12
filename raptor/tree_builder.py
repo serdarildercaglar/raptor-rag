@@ -12,7 +12,10 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 
 from .EmbeddingModels import BaseEmbeddingModel, OpenAIEmbeddingModel
 from .SummarizationModels import (BaseSummarizationModel,
-                                  GPT3TurboSummarizationModel)
+                                  GPT41SummarizationModel,
+                                  GPT41MiniSummarizationModel,
+                                  GPT4OSummarizationModel,
+                                  GPT4OMiniSummarizationModel)
 from .tree_structures import Node, Tree
 from .utils import (distances_from_embeddings, get_children, get_embeddings,
                     get_node_list, get_text,
@@ -36,7 +39,7 @@ class TreeBuilderConfig:
         cluster_embedding_model=None,
     ):
         if tokenizer is None:
-            tokenizer = tiktoken.get_encoding("cl100k_base")
+            tokenizer = tiktoken.get_encoding("o200k_base")
         self.tokenizer = tokenizer
 
         if max_tokens is None:
@@ -74,7 +77,7 @@ class TreeBuilderConfig:
         self.summarization_length = summarization_length
 
         if summarization_model is None:
-            summarization_model = GPT3TurboSummarizationModel()
+            summarization_model = GPT41SummarizationModel()
         if not isinstance(summarization_model, BaseSummarizationModel):
             raise ValueError(
                 "summarization_model must be an instance of BaseSummarizationModel"

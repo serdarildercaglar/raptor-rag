@@ -134,7 +134,7 @@ class RAPTOR_Clustering(ClusteringAlgorithm):
         nodes: List[Node],
         embedding_model_name: str,
         max_length_in_cluster: int = 3500,
-        tokenizer=tiktoken.get_encoding("cl100k_base"),
+        tokenizer=tiktoken.get_encoding("o200k_base"),
         reduction_dimension: int = 10,
         threshold: float = 0.1,
         verbose: bool = False,
