@@ -6,4 +6,9 @@ torch>=2.1.0
 transformers>=4.53.1
 numpy>=1.24.0
 pydantic>=2.11.7
-pynvml=12.0.0
+pydantic-settings==2.10.1
+# pynvml=12.0.0
+arctic-inference>=0.0.8
+prometheus-client>=0.22.1
+httpx>=0.28.1
+numpy>=1.24.0

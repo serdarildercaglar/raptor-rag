@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'vllm-embeddings'
+    static_configs:
+      - targets: ['embedding-server:9090']

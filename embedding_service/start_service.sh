@@ -1,30 +1,21 @@
 #!/bin/bash
-# embedding_service/start_service.sh
+# Production startup script
 
-echo "🚀 Starting VLLM Embedding Service..."
+echo "🚀 Starting VLLM Embedding Server..."
 
-# # Install requirements
-# echo "📚 Installing requirements..."
-# pip install -r requirements.txt
+# Check GPU
+nvidia-smi
 
-# Check if .env exists
-if [ ! -f ".env" ]; then
-    echo "⚠️  .env file not found, creating default..."
-    cat > .env << EOF
-EMBEDDING_MODEL=intfloat/multilingual-e5-large
-EMBEDDING_PORT=8008
-GPU_MEMORY_UTILIZATION=0.7
-EMBEDDING_BATCH_SIZE=32
-MAX_BATCH_SIZE=64
-MAX_MODEL_LEN=512
-LOG_LEVEL=INFO
-EOF
+# Set optimizations
+export VLLM_ATTENTION_BACKEND=FLASHINFER  # Use FlashInfer if available
+export VLLM_USE_MODELSCOPE=false
+export TOKENIZERS_PARALLELISM=false
+
+# Arctic Inference specifics
+if [ "$USE_ARCTIC_INFERENCE" = "true" ]; then
+    echo "❄️  Arctic Inference optimizations enabled"
+    export VLLM_PLUGINS="arctic_inference"
 fi
 
-# 🔒 Use only RTX 3090 (GPU 1)
-export CUDA_VISIBLE_DEVICES=1
-echo "🎯 CUDA_VISIBLE_DEVICES set to 1 (using RTX 3090 only)"
-
-# Start the service
-echo "🔥 Starting embedding service on port 8008..."
-python server.py
+# Start server
+exec python server.py
