@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-LlamaIndex Retrieve Service with DOĞRU RecursiveRetriever Pattern
-TAMAMEN dokümantasyona dayalı implementation
+Fixed LlamaIndex Retrieve Service with VLLM Embeddings
+Pydantic sorunlarını çözdük ve RecursiveRetriever'ı düzelttik
 """
 import asyncio
 import logging
@@ -15,49 +15,103 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import uvicorn
 
 # LlamaIndex Core
 from llama_index.core.schema import NodeWithScore, BaseNode, IndexNode
-from llama_index.core.embeddings import BaseEmbedding
-from llama_index.core.retrievers import RecursiveRetriever
-from llama_index.core import VectorStoreIndex
 
-# Vector Store
-from llama_index.vector_stores.qdrant import QdrantVectorStore
+# Qdrant Client
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 # VLLM Integration
 import aiohttp
-
-from config import RetrieveServiceConfig
+import tiktoken
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Global variables
-recursive_retriever: Optional[RecursiveRetriever] = None
-security = HTTPBearer() if RetrieveServiceConfig.API_KEY else None
-
-class VLLMQueryEmbedding(BaseEmbedding):
-    """VLLM Embedding with query prefix for retrieval"""
+class RetrieveServiceConfig:
+    """Configuration for Retrieve Service"""
     
-    # Pydantic fields for LlamaIndex compatibility
-    base_url: str = ""
-    vllm_model_name: str = ""
-    session: Optional[aiohttp.ClientSession] = None
+    # VLLM Embedding Service (Query Mode)
+    VLLM_BASE_URL: str = "http://localhost:8008"
+    VLLM_MODEL_NAME: str = "intfloat/multilingual-e5-large"
     
-    def __init__(self, base_url: str, model_name: str, **kwargs):
-        super().__init__(**kwargs)
-        # Use object.__setattr__ to bypass pydantic validation during init
-        object.__setattr__(self, 'base_url', base_url.rstrip('/'))
-        object.__setattr__(self, 'vllm_model_name', model_name)
-        object.__setattr__(self, 'session', None)
+    # Qdrant Configuration
+    QDRANT_URL: str = "http://localhost:6333"
+    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_COLLECTION_NAME: str = "llamaindex_tree"
+    
+    # Tree Data Path
+    TREE_DATA_PATH: str = "./tree_data"  # Default path
+    
+    # FastAPI Server
+    HOST: str = "0.0.0.0"
+    PORT: int = 8000
+    API_KEY: Optional[str] = None
+    
+    # Retrieval Configuration
+    DEFAULT_TOP_K: int = 5
+    MAX_TOP_K: int = 50
+    DEFAULT_SIMILARITY_CUTOFF: float = 0.0
+    MAX_BATCH_SIZE: int = 100
+    
+    # Performance
+    TIMEOUT_SECONDS: int = 30
+    MAX_CONCURRENT_REQUESTS: int = 10
+    
+    @classmethod
+    def validate(cls) -> bool:
+        """Validate required configuration"""
+        # Test Qdrant connection
+        try:
+            client = QdrantClient(url=cls.QDRANT_URL, api_key=cls.QDRANT_API_KEY)
+            collections = client.get_collections()
+            
+            # Check if collection exists
+            collection_names = [col.name for col in collections.collections]
+            if cls.QDRANT_COLLECTION_NAME not in collection_names:
+                raise ValueError(f"Qdrant collection '{cls.QDRANT_COLLECTION_NAME}' not found. Available: {collection_names}")
+                
+        except Exception as e:
+            raise ValueError(f"Qdrant connection failed: {e}")
         
-    class Config:
-        arbitrary_types_allowed = True
+        # Test VLLM connection
+        try:
+            import requests
+            response = requests.get(f"{cls.VLLM_BASE_URL}/health", timeout=5)
+            if response.status_code != 200:
+                raise ValueError(f"VLLM service not healthy: {response.status_code}")
+        except Exception as e:
+            raise ValueError(f"VLLM connection failed: {e}")
+        
+        return True
+    
+    @classmethod
+    def log_config(cls):
+        """Log configuration (without sensitive data)"""
+        print("🔧 Retrieve Service Configuration:")
+        print(f"   Server: {cls.HOST}:{cls.PORT}")
+        print(f"   VLLM URL: {cls.VLLM_BASE_URL}")
+        print(f"   Qdrant URL: {cls.QDRANT_URL}")
+        print(f"   Collection: {cls.QDRANT_COLLECTION_NAME}")
+        print(f"   Tree Data Path: {cls.TREE_DATA_PATH}")
+        print(f"   Default Top-K: {cls.DEFAULT_TOP_K}")
+        print(f"   Max Batch Size: {cls.MAX_BATCH_SIZE}")
+        print(f"   API Key: {'✅ Set' if cls.API_KEY else '❌ None'}")
+        print("=" * 50)
+
+class VLLMQueryEmbedding:
+    """Fixed VLLM Embedding with query prefix for retrieval"""
+    
+    def __init__(self, base_url: str, model_name: str):
+        self.base_url = base_url.rstrip('/')
+        self.model_name = model_name
+        self.session = None
+        self._tokenizer = tiktoken.get_encoding("o200k_base")
         
     async def _ensure_session(self):
         """Ensure aiohttp session exists"""
@@ -67,76 +121,54 @@ class VLLMQueryEmbedding(BaseEmbedding):
     
     async def _embed_batch(self, texts: List[str], prefix: str = "query") -> List[List[float]]:
         """Embed batch of texts with prefix and auto-truncation"""
-        # Use context manager for safer session handling
-        timeout = aiohttp.ClientTimeout(total=RetrieveServiceConfig.TIMEOUT_SECONDS)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            # Add prefix and truncate if needed
-            max_tokens = 400  # Leave margin for prefix
-            import tiktoken
-            tokenizer = tiktoken.get_encoding("o200k_base")
+        await self._ensure_session()
+        
+        # Add prefix and truncate if needed
+        max_tokens = 400  # Leave margin for prefix
+        
+        prefixed_texts = []
+        for text in texts:
+            prefixed_text = f"{prefix}: {text}"
             
-            prefixed_texts = []
-            for text in texts:
-                prefixed_text = f"{prefix}: {text}"
-                
-                # Truncate if too long
-                tokens = tokenizer.encode(prefixed_text)
-                if len(tokens) > max_tokens:
-                    # Truncate tokens and decode back
-                    truncated_tokens = tokens[:max_tokens]
-                    prefixed_text = tokenizer.decode(truncated_tokens)
-                    logger.warning(f"Query truncated from {len(tokens)} to {max_tokens} tokens")
-                
-                prefixed_texts.append(prefixed_text)
+            # Truncate if too long
+            tokens = self._tokenizer.encode(prefixed_text)
+            if len(tokens) > max_tokens:
+                # Truncate tokens and decode back
+                truncated_tokens = tokens[:max_tokens]
+                prefixed_text = self._tokenizer.decode(truncated_tokens)
+                logger.debug(f"Query truncated from {len(tokens)} to {max_tokens} tokens")
             
-            payload = {
-                "input": prefixed_texts,
-                "model": self.vllm_model_name
-            }
-            
-            async with session.post(f"{self.base_url}/v1/embeddings", json=payload) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    return [item['embedding'] for item in result['data']]
-                else:
-                    error_text = await response.text()
-                    raise Exception(f"VLLM embedding error {response.status}: {error_text}")
+            prefixed_texts.append(prefixed_text)
+        
+        payload = {
+            "input": prefixed_texts,
+            "model": self.model_name
+        }
+        
+        async with self.session.post(f"{self.base_url}/v1/embeddings", json=payload) as response:
+            if response.status == 200:
+                result = await response.json()
+                return [item['embedding'] for item in result['data']]
+            else:
+                error_text = await response.text()
+                raise Exception(f"VLLM embedding error {response.status}: {error_text}")
     
-    # Text embedding methods (use query prefix for retrieval service)
-    async def _aget_text_embedding(self, text: str) -> List[float]:
-        """Get embedding for single text (query prefix)"""
-        embeddings = await self._embed_batch([text], prefix="query")
-        return embeddings[0]
-    
-    def _get_text_embedding(self, text: str) -> List[float]:
-        """Sync version for text embedding"""
-        return asyncio.run(self._aget_text_embedding(text))
-    
-    async def _aget_text_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Get embeddings for multiple texts (query prefix)"""
-        return await self._embed_batch(texts, prefix="query")
-    
-    def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Sync version for text embeddings"""
-        return asyncio.run(self._aget_text_embeddings(texts))
-    
-    # Query embedding methods (same as text for retrieval service)
-    async def _aget_query_embedding(self, query: str) -> List[float]:
+    async def get_query_embedding(self, query: str) -> List[float]:
         """Get embedding for single query (query prefix)"""
         embeddings = await self._embed_batch([query], prefix="query")
         return embeddings[0]
     
-    def _get_query_embedding(self, query: str) -> List[float]:
-        """Sync version for query embedding"""
-        return asyncio.run(self._aget_query_embedding(query))
+    async def get_query_embeddings(self, queries: List[str]) -> List[List[float]]:
+        """Get embeddings for multiple queries (query prefix)"""
+        return await self._embed_batch(queries, prefix="query")
     
     async def close(self):
         """Close session"""
         if self.session and not self.session.closed:
             await self.session.close()
 
-class AsyncRecursiveRetriever:
-    """Async wrapper for RecursiveRetriever with batch processing"""
+class FixedRecursiveRetriever:
+    """Fixed implementation of RecursiveRetriever using direct Qdrant queries"""
     
     def __init__(self, config: RetrieveServiceConfig):
         self.config = config
@@ -145,37 +177,40 @@ class AsyncRecursiveRetriever:
             model_name=config.VLLM_MODEL_NAME
         )
         
-        # Initialize QdrantVectorStore (DOĞRU YÖNTEM)
-        qdrant_client = QdrantClient(
+        # Initialize Qdrant client
+        self.qdrant_client = QdrantClient(
             url=config.QDRANT_URL,
             api_key=config.QDRANT_API_KEY,
         )
         
-        vector_store = QdrantVectorStore(
-            client=qdrant_client,
-            collection_name=config.QDRANT_COLLECTION_NAME,
-        )
-        
-        # Load VectorStoreIndex from vector store (DOĞRU YÖNTEM)
-        self.vector_index = VectorStoreIndex.from_vector_store(
-            vector_store=vector_store,
-            embed_model=self.embed_model
-        )
-        
-        # Load node mapping (CRITICAL for RecursiveRetriever)
+        # Load node mapping
         self.node_dict = self._load_node_mapping()
         
-        # Create RecursiveRetriever (EXACTLY like documentation)
-        self.recursive_retriever = self._create_recursive_retriever()
-        
-        logger.info(f"✅ Initialized AsyncRecursiveRetriever with {len(self.node_dict)} nodes")
+        logger.info(f"✅ Initialized FixedRecursiveRetriever with {len(self.node_dict)} nodes")
     
     def _load_node_mapping(self) -> Dict[str, BaseNode]:
-        """Load node mapping from JSON file (created by tree builder)"""
-        node_mapping_path = Path("tree_data/node_mapping.json")
+        """Load node mapping from JSON file"""
+        # Try different possible locations
+        possible_paths = [
+            Path(self.config.TREE_DATA_PATH) / "node_mapping.json",
+            Path("tree_data/node_mapping.json"),
+            Path("../tree_builder/tree_data/node_mapping.json"),
+            Path("./tree_builder/tree_data/node_mapping.json")
+        ]
         
-        if not node_mapping_path.exists():
-            raise FileNotFoundError(f"Node mapping file not found: {node_mapping_path}")
+        node_mapping_path = None
+        for path in possible_paths:
+            if path.exists():
+                node_mapping_path = path
+                break
+        
+        if not node_mapping_path:
+            available_paths = [str(p) for p in possible_paths]
+            raise FileNotFoundError(
+                f"Node mapping file not found in any of these locations:\n" +
+                "\n".join(f"  - {p}" for p in available_paths) +
+                f"\n\nPlease run the tree builder first or set the correct TREE_DATA_PATH"
+            )
         
         logger.info(f"📋 Loading node mapping from: {node_mapping_path}")
         
@@ -206,56 +241,76 @@ class AsyncRecursiveRetriever:
         logger.info(f"📋 Loaded {len(node_dict)} nodes from mapping file")
         return node_dict
     
-    def _create_recursive_retriever(self) -> RecursiveRetriever:
-        """Create RecursiveRetriever (EXACTLY like documentation)"""
-        vector_retriever = self.vector_index.as_retriever()
-        
-        recursive_retriever = RecursiveRetriever(
-            root_id="vector",
-            retriever_dict={"vector": vector_retriever},
-            node_dict=self.node_dict,
-            verbose=False
-        )
-        
-        return recursive_retriever
-    
     async def retrieve_single(self, query: str, top_k: int = None, similarity_cutoff: float = None) -> List[Dict[str, Any]]:
-        """Retrieve for single query"""
+        """Retrieve for single query using direct Qdrant search"""
         top_k = top_k or self.config.DEFAULT_TOP_K
         similarity_cutoff = similarity_cutoff or self.config.DEFAULT_SIMILARITY_CUTOFF
         
-        # Update vector retriever parameters
-        vector_retriever = self.vector_index.as_retriever(
-            similarity_top_k=top_k,
-            similarity_cutoff=similarity_cutoff
+        # Get query embedding
+        query_embedding = await self.embed_model.get_query_embedding(query)
+        
+        # Search in Qdrant
+        search_results = self.qdrant_client.search(
+            collection_name=self.config.QDRANT_COLLECTION_NAME,
+            query_vector=query_embedding,
+            limit=top_k,
+            score_threshold=similarity_cutoff if similarity_cutoff > 0 else None
         )
         
-        # Update recursive retriever
-        self.recursive_retriever.retriever_dict["vector"] = vector_retriever
+        # Process results and follow references
+        final_results = []
+        seen_nodes = set()
         
-        # Perform recursive retrieval (LlamaIndex handles the magic!)
-        nodes_with_scores = self.recursive_retriever.retrieve(query)
-        
-        # Format results
-        results = []
-        for node_with_score in nodes_with_scores:
-            result = {
-                "node_id": node_with_score.node.node_id,
-                "text": node_with_score.node.get_content(),
-                "score": node_with_score.score if hasattr(node_with_score, 'score') else 1.0,
-                "metadata": node_with_score.node.metadata,
-            }
+        for result in search_results:
+            payload = result.payload
+            node_id = payload.get("node_id")
             
-            # Add reference information if it's an IndexNode
-            if hasattr(node_with_score.node, 'index_id'):
-                result["index_id"] = node_with_score.node.index_id
-                result["node_type"] = "reference"
-            else:
-                result["node_type"] = "base"
+            # Skip if we've already seen this node
+            if node_id in seen_nodes:
+                continue
             
-            results.append(result)
+            # Get the actual node (for reference following)
+            if node_id in self.node_dict:
+                node = self.node_dict[node_id]
+                
+                # If this is an IndexNode with reference, follow it
+                if hasattr(node, 'index_id') and node.index_id:
+                    # Get the referenced node
+                    referenced_node_id = node.index_id
+                    if referenced_node_id in self.node_dict:
+                        referenced_node = self.node_dict[referenced_node_id]
+                        
+                        # Add the referenced node (the actual content)
+                        if referenced_node_id not in seen_nodes:
+                            final_result = {
+                                "node_id": referenced_node_id,
+                                "text": referenced_node.get_content(),
+                                "score": result.score,
+                                "metadata": referenced_node.metadata,
+                                "node_type": "base",
+                                "reference_path": f"{node_id} -> {referenced_node_id}"
+                            }
+                            final_results.append(final_result)
+                            seen_nodes.add(referenced_node_id)
+                
+                # Also add the original node (the reference itself)
+                result_data = {
+                    "node_id": node_id,
+                    "text": node.get_content(),
+                    "score": result.score,
+                    "metadata": node.metadata,
+                }
+                
+                if hasattr(node, 'index_id') and node.index_id:
+                    result_data["index_id"] = node.index_id
+                    result_data["node_type"] = "reference"
+                else:
+                    result_data["node_type"] = "base"
+                
+                final_results.append(result_data)
+                seen_nodes.add(node_id)
         
-        return results
+        return final_results
     
     async def retrieve_batch(self, queries: List[str], top_k: int = None, similarity_cutoff: float = None) -> List[List[Dict[str, Any]]]:
         """Retrieve for multiple queries with async processing"""
@@ -277,6 +332,10 @@ class AsyncRecursiveRetriever:
         """Close resources"""
         await self.embed_model.close()
 
+# Global variables
+recursive_retriever: Optional[FixedRecursiveRetriever] = None
+security = HTTPBearer() if RetrieveServiceConfig.API_KEY else None
+
 # =============================================================================
 # PYDANTIC MODELS
 # =============================================================================
@@ -293,7 +352,8 @@ class BatchRetrieveRequest(BaseModel):
     top_k: Optional[int] = Field(None, ge=1, le=RetrieveServiceConfig.MAX_TOP_K, description="Number of results per query")
     similarity_cutoff: Optional[float] = Field(None, ge=0.0, le=1.0, description="Similarity cutoff")
     
-    @validator('queries')
+    @field_validator('queries')
+    @classmethod
     def validate_queries(cls, v):
         """Validate query list"""
         for i, query in enumerate(v):
@@ -311,6 +371,7 @@ class RetrieveResult(BaseModel):
     metadata: Dict[str, Any]
     node_type: str
     index_id: Optional[str] = None
+    reference_path: Optional[str] = None
 
 class RetrieveResponse(BaseModel):
     """Single retrieve response"""
@@ -336,13 +397,13 @@ async def lifespan(app: FastAPI):
     global recursive_retriever
     
     # Startup
-    logger.info("🚀 Starting LlamaIndex Retrieve Service...")
+    logger.info("🚀 Starting Fixed Retrieve Service...")
     try:
         RetrieveServiceConfig.validate()
         RetrieveServiceConfig.log_config()
         
-        recursive_retriever = AsyncRecursiveRetriever(RetrieveServiceConfig)
-        logger.info("✅ Recursive retrieve service initialized")
+        recursive_retriever = FixedRecursiveRetriever(RetrieveServiceConfig)
+        logger.info("✅ Fixed recursive retrieve service initialized")
         
     except Exception as e:
         logger.error(f"❌ Failed to initialize: {e}")
@@ -356,9 +417,9 @@ async def lifespan(app: FastAPI):
         await recursive_retriever.close()
 
 app = FastAPI(
-    title="LlamaIndex RecursiveRetriever Service",
+    title="Fixed LlamaIndex RecursiveRetriever Service",
     description="High-performance recursive retrieval with VLLM and Qdrant",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -397,11 +458,11 @@ async def health_check():
     
     return {
         "status": "healthy",
-        "service": "llamaindex_recursive_retriever",
+        "service": "fixed_recursive_retriever",
         "qdrant_collection": RetrieveServiceConfig.QDRANT_COLLECTION_NAME,
         "node_count": len(recursive_retriever.node_dict),
         "vllm_url": RetrieveServiceConfig.VLLM_BASE_URL,
-        "pattern": "RecursiveRetriever with IndexNode references"
+        "pattern": "Fixed RecursiveRetriever with direct Qdrant queries"
     }
 
 @app.post("/retrieve", response_model=RetrieveResponse)
@@ -409,7 +470,7 @@ async def retrieve_single(
     request: RetrieveRequest,
     api_key: str = Depends(verify_api_key) if security else None
 ):
-    """Single query retrieval with RecursiveRetriever"""
+    """Single query retrieval with Fixed RecursiveRetriever"""
     if not recursive_retriever:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -440,7 +501,7 @@ async def retrieve_batch(
     request: BatchRetrieveRequest,
     api_key: str = Depends(verify_api_key) if security else None
 ):
-    """Batch query retrieval with async RecursiveRetriever"""
+    """Batch query retrieval with async Fixed RecursiveRetriever"""
     if not recursive_retriever:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -496,7 +557,7 @@ async def get_stats():
         "node_types": node_types,
         "reference_types": reference_types,
         "collection_name": RetrieveServiceConfig.QDRANT_COLLECTION_NAME,
-        "retriever_type": "RecursiveRetriever",
+        "retriever_type": "FixedRecursiveRetriever",
         "config": {
             "default_top_k": RetrieveServiceConfig.DEFAULT_TOP_K,
             "max_top_k": RetrieveServiceConfig.MAX_TOP_K,
@@ -511,20 +572,18 @@ async def get_stats():
 
 if __name__ == "__main__":
     logger.info("=" * 60)
-    logger.info("🚀 LlamaIndex RecursiveRetriever Service")
+    logger.info("🚀 Fixed LlamaIndex RecursiveRetriever Service")
     logger.info("=" * 60)
     logger.info(f"Collection: {RetrieveServiceConfig.QDRANT_COLLECTION_NAME}")
     logger.info(f"VLLM URL: {RetrieveServiceConfig.VLLM_BASE_URL}")
     logger.info(f"Server: {RetrieveServiceConfig.HOST}:{RetrieveServiceConfig.PORT}")
-    logger.info("🔗 Pattern: RecursiveRetriever with IndexNode references")
+    logger.info("🔧 Pattern: Fixed RecursiveRetriever with direct Qdrant queries")
     logger.info("=" * 60)
     
     uvicorn.run(
         app,
         host=RetrieveServiceConfig.HOST,
         port=RetrieveServiceConfig.PORT,
-        log_level=RetrieveServiceConfig.LOG_LEVEL.lower(),
+        log_level="info",
         access_log=True,
-        # Use uvloop for better async performance
-        loop="uvloop",
     )

@@ -1,0 +1,16 @@
+{
+  "total_documents": 1,
+  "total_base_nodes": 16,
+  "total_chunk_nodes": 275,
+  "total_metadata_nodes": 32,
+  "total_nodes": 307,
+  "total_stored": 307,
+  "qdrant_collection": "llamaindex_tree",
+  "base_chunk_size": 1024,
+  "sub_chunk_sizes": [
+    128,
+    256,
+    512
+  ],
+  "embedding_dimension": 1024
+}
