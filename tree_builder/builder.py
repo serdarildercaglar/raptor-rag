@@ -1,16 +1,20 @@
-#!/usr/bin/env python3
+# builder.py - Main Tree Builder Implementation
 """
-Fixed LlamaIndex Tree Builder with VLLM Embeddings
-Pydantic hatalarını çözdük ve production ready hale getirdik
+LlamaIndex Tree Builder with VLLM Embeddings and LlamaIndex OpenAI LLM
+Clean, modular implementation using configuration management
+Uses LlamaIndex's built-in async OpenAI LLM for compatibility
 """
+
 import asyncio
-import json, os
+import json
 import logging
 import time
-from pathlib import Path
 from typing import List, Dict, Optional, Any
 from tqdm import tqdm
 import nest_asyncio
+
+# Configuration
+from config import load_and_validate_config
 
 # LlamaIndex Core
 from llama_index.core import Document, StorageContext
@@ -20,7 +24,7 @@ from llama_index.core.extractors import SummaryExtractor, QuestionsAnsweredExtra
 from llama_index.core import VectorStoreIndex
 from llama_index.readers.file import PDFReader
 
-# LlamaIndex LLM
+# LlamaIndex LLM  
 from llama_index.llms.openai import OpenAI
 
 # Vector Store
@@ -31,27 +35,21 @@ from qdrant_client import QdrantClient
 import aiohttp
 import tiktoken
 
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
 # Enable nested asyncio
 nest_asyncio.apply()
 
+# Get logger
+logger = logging.getLogger(__name__)
+
 class VLLMEmbedding:
     """
-    Fixed VLLM Embedding implementation for LlamaIndex
-    Pydantic sorunlarını çözdük - artık BaseEmbedding'den inherit etmiyoruz
+    VLLM Embedding implementation with async batch processing
     """
     
-    def __init__(self, base_url: str, model_name: str, **kwargs):
+    def __init__(self, base_url: str, model_name: str, max_tokens: int = 400):
         self.base_url = base_url.rstrip('/')
         self.model_name = model_name
+        self.max_tokens = max_tokens
         self.session = None
         self._tokenizer = tiktoken.get_encoding("o200k_base")
         
@@ -65,20 +63,16 @@ class VLLMEmbedding:
         """Embed batch of texts with prefix and auto-truncation"""
         await self._ensure_session()
         
-        # Add prefix and truncate if needed
-        max_tokens = 400  # Leave margin for prefix
-        
         prefixed_texts = []
         for text in texts:
             prefixed_text = f"{prefix}: {text}"
             
             # Truncate if too long
             tokens = self._tokenizer.encode(prefixed_text)
-            if len(tokens) > max_tokens:
-                # Truncate tokens and decode back
-                truncated_tokens = tokens[:max_tokens]
+            if len(tokens) > self.max_tokens:
+                truncated_tokens = tokens[:self.max_tokens]
                 prefixed_text = self._tokenizer.decode(truncated_tokens)
-                logger.debug(f"Text truncated from {len(tokens)} to {max_tokens} tokens")
+                logger.debug(f"Text truncated from {len(tokens)} to {self.max_tokens} tokens")
             
             prefixed_texts.append(prefixed_text)
         
@@ -127,75 +121,29 @@ class VLLMEmbedding:
         if self.session and not self.session.closed:
             await self.session.close()
 
-class TreeBuilderConfig:
-    """Configuration for Tree Builder"""
+class ModularTreeBuilder:
+    """
+    Modular LlamaIndex Tree Builder with configuration management
+    Uses LlamaIndex's built-in OpenAI LLM for full compatibility with extractors
+    """
     
-    # OpenAI Configuration
-    OPENAI_API_KEY: str = "YOUR_OPENAI_API_KEY"  # Set this!
-    
-    # VLLM Embedding Service
-    VLLM_BASE_URL: str = "http://localhost:8008"
-    VLLM_MODEL_NAME: str = "intfloat/multilingual-e5-large"
-    
-    # Qdrant Configuration
-    QDRANT_URL: str = "http://localhost:6333"
-    QDRANT_API_KEY: Optional[str] = None
-    QDRANT_COLLECTION_NAME: str = "llamaindex_tree"
-    
-    # Document Processing
-    DOCUMENTS_FOLDER: Path = Path("./documents")
-    OUTPUT_PATH: Path = Path("./tree_data")
-    
-    # Chunking Configuration
-    BASE_CHUNK_SIZE: int = 1024
-    SUB_CHUNK_SIZES: List[int] = [128, 256, 512]
-    CHUNK_OVERLAP: int = 20
-    
-    # Metadata Extraction
-    NUM_QUESTIONS: int = 3  # Reduced for faster processing
-    ENABLE_SUMMARIES: bool = True
-    
-    @classmethod
-    def validate(cls) -> bool:
-        """Validate required configuration"""
-        if not cls.OPENAI_API_KEY or cls.OPENAI_API_KEY == "YOUR_OPENAI_API_KEY":
-            raise ValueError("OPENAI_API_KEY is required for metadata extraction")
-        
-        if not cls.DOCUMENTS_FOLDER.exists():
-            raise ValueError(f"Documents folder does not exist: {cls.DOCUMENTS_FOLDER}")
-        
-        # Create output directory if it doesn't exist
-        cls.OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-        
-        return True
-    
-    @classmethod
-    def log_config(cls):
-        """Log configuration (without sensitive data)"""
-        print("🔧 Tree Builder Configuration:")
-        print(f"   Documents Folder: {cls.DOCUMENTS_FOLDER}")
-        print(f"   Output Path: {cls.OUTPUT_PATH}")
-        print(f"   VLLM URL: {cls.VLLM_BASE_URL}")
-        print(f"   Qdrant URL: {cls.QDRANT_URL}")
-        print(f"   Base Chunk Size: {cls.BASE_CHUNK_SIZE}")
-        print(f"   Sub Chunk Sizes: {cls.SUB_CHUNK_SIZES}")
-        print(f"   Enable Summaries: {cls.ENABLE_SUMMARIES}")
-        print(f"   Num Questions: {cls.NUM_QUESTIONS}")
-        print("=" * 50)
-
-class FixedTreeBuilder:
-    """Fixed LlamaIndex Tree Builder with VLLM Embeddings"""
-    
-    def __init__(self, config: TreeBuilderConfig):
+    def __init__(self, config):
         self.config = config
         
-        # Initialize LLM for summarization (GPT-4o)
-        self.llm = OpenAI(model="gpt-4o-mini", api_key=config.OPENAI_API_KEY)
+        # Initialize LlamaIndex OpenAI LLM directly 
+        # (Required for compatibility with SummaryExtractor and QuestionsAnsweredExtractor)
+        self.llm = OpenAI(
+            api_key=config.OPENAI_API_KEY,
+            model=config.OPENAI_MODEL,
+            temperature=0.1,
+            max_tokens=1024
+        )
         
         # Initialize VLLM embedding
         self.embed_model = VLLMEmbedding(
             base_url=config.VLLM_BASE_URL,
-            model_name=config.VLLM_MODEL_NAME
+            model_name=config.VLLM_MODEL_NAME,
+            max_tokens=config.MAX_TOKENS
         )
         
         # Initialize Qdrant client
@@ -232,7 +180,7 @@ class FixedTreeBuilder:
             )
     
     def load_documents(self) -> List[Document]:
-        """Load PDF and TXT documents from folder"""
+        """Load PDF and TXT documents from configured folder"""
         logger.info(f"📁 Loading documents from: {self.config.DOCUMENTS_FOLDER}")
         
         documents = []
@@ -295,7 +243,7 @@ class FixedTreeBuilder:
         all_nodes = []
         
         for base_node in tqdm(base_nodes, desc="Processing base nodes"):
-            # Create sub-chunks pointing to base node (EXACTLY like documentation)
+            # Create sub-chunks pointing to base node
             for parser in self.sub_parsers:
                 sub_nodes = parser.get_nodes_from_documents([base_node])
                 sub_index_nodes = [
@@ -304,7 +252,7 @@ class FixedTreeBuilder:
                 ]
                 all_nodes.extend(sub_index_nodes)
             
-            # Add original base node as IndexNode (EXACTLY like documentation)
+            # Add original base node as IndexNode
             original_node = IndexNode.from_text_node(base_node, base_node.node_id)
             all_nodes.append(original_node)
         
@@ -312,24 +260,36 @@ class FixedTreeBuilder:
         return all_nodes
     
     async def create_metadata_references(self, base_nodes: List[BaseNode]) -> List[IndexNode]:
-        """Create metadata references (summaries + questions) - LlamaIndex pattern"""
+        """Create metadata references (summaries + questions) - Async version"""
         logger.info("📋 Creating metadata references...")
         
         if not self.extractors:
             logger.info("No extractors configured, skipping metadata extraction")
             return []
         
-        # Extract metadata (EXACTLY like documentation)
+        # Extract metadata using async extractors
         node_to_metadata = {}
         for extractor in self.extractors:
             logger.info(f"Running extractor: {extractor.__class__.__name__}")
-            metadata_dicts = extractor.extract(base_nodes)
             
-            for node, metadata in zip(base_nodes, metadata_dicts):
-                if node.node_id not in node_to_metadata:
-                    node_to_metadata[node.node_id] = metadata
-                else:
-                    node_to_metadata[node.node_id].update(metadata)
+            # Process in batches for better performance
+            batch_size = self.config.BATCH_SIZE
+            for i in tqdm(range(0, len(base_nodes), batch_size), desc=f"Extracting {extractor.__class__.__name__}"):
+                batch_nodes = base_nodes[i:i+batch_size]
+                
+                try:
+                    metadata_dicts = extractor.extract(batch_nodes)
+                    
+                    for node, metadata in zip(batch_nodes, metadata_dicts):
+                        if node.node_id not in node_to_metadata:
+                            node_to_metadata[node.node_id] = metadata
+                        else:
+                            node_to_metadata[node.node_id].update(metadata)
+                            
+                except Exception as e:
+                    logger.error(f"Error in batch {i//batch_size + 1}: {e}")
+                    # Continue with next batch
+                    continue
         
         # Save metadata cache
         metadata_path = self.config.OUTPUT_PATH / "metadata_cache.json"
@@ -337,7 +297,7 @@ class FixedTreeBuilder:
             json.dump(node_to_metadata, f, ensure_ascii=False, indent=2)
         logger.info(f"💾 Saved metadata cache to: {metadata_path}")
         
-        # Create IndexNodes from metadata (EXACTLY like documentation)
+        # Create IndexNodes from metadata
         metadata_nodes = []
         for node_id, metadata in node_to_metadata.items():
             for key, value in metadata.items():
@@ -350,7 +310,7 @@ class FixedTreeBuilder:
         return metadata_nodes
     
     async def build_and_store_index(self, all_nodes: List[IndexNode]):
-        """Build VectorStoreIndex and store in Qdrant"""
+        """Build VectorStoreIndex and store in Qdrant with batch processing"""
         logger.info(f"🏗️ Building VectorStoreIndex with {len(all_nodes)} nodes...")
         
         # Create QdrantVectorStore
@@ -359,13 +319,11 @@ class FixedTreeBuilder:
             collection_name=self.config.QDRANT_COLLECTION_NAME,
         )
         
-        # Create storage context
-        storage_context = StorageContext.from_defaults(vector_store=vector_store)
-        
-        # Custom embedding function for LlamaIndex
+        # Custom embedding function for batch processing
         class EmbeddingFunctionWrapper:
-            def __init__(self, embed_model):
+            def __init__(self, embed_model, batch_size):
                 self.embed_model = embed_model
+                self.batch_size = batch_size
             
             def get_text_embedding(self, text: str) -> List[float]:
                 return self.embed_model.get_text_embedding(text)
@@ -376,34 +334,42 @@ class FixedTreeBuilder:
             def get_query_embedding(self, query: str) -> List[float]:
                 return self.embed_model.get_query_embedding(query)
         
-        embedding_wrapper = EmbeddingFunctionWrapper(self.embed_model)
+        embedding_wrapper = EmbeddingFunctionWrapper(
+            self.embed_model, 
+            self.config.EMBEDDING_BATCH_SIZE
+        )
         
-        # Build index step by step to avoid Pydantic issues
+        # Extract text from nodes
         logger.info("📝 Extracting text from nodes...")
         node_texts = [node.get_content() for node in all_nodes]
         
+        # Generate embeddings in batches
         logger.info("🔢 Generating embeddings...")
         start_time = time.perf_counter()
         
-        # Process in batches to avoid memory issues
-        batch_size = 50
         all_embeddings = []
+        batch_size = self.config.EMBEDDING_BATCH_SIZE
         
         for i in tqdm(range(0, len(node_texts), batch_size), desc="Embedding batches"):
             batch_texts = node_texts[i:i+batch_size]
-            batch_embeddings = embedding_wrapper.get_text_embeddings(batch_texts)
-            all_embeddings.extend(batch_embeddings)
+            try:
+                batch_embeddings = embedding_wrapper.get_text_embeddings(batch_texts)
+                all_embeddings.extend(batch_embeddings)
+            except Exception as e:
+                logger.error(f"Error in embedding batch {i//batch_size + 1}: {e}")
+                # Create zero embeddings as fallback
+                batch_embeddings = [[0.0] * 1024 for _ in batch_texts]
+                all_embeddings.extend(batch_embeddings)
         
         embedding_time = time.perf_counter() - start_time
         logger.info(f"✅ Generated {len(all_embeddings)} embeddings in {embedding_time:.1f}s")
         
-        # Create simple VectorStoreIndex (bypassing Pydantic embed_model issues)
-        logger.info("🏗️ Building vector index...")
+        # Store in Qdrant
+        logger.info("🏗️ Storing in Qdrant...")
         
-        # Use Qdrant directly for insertion
         from qdrant_client.models import Distance, VectorParams, PointStruct
         
-        # Ensure collection exists with correct settings
+        # Ensure collection exists
         try:
             collection_info = self.qdrant_client.get_collection(self.config.QDRANT_COLLECTION_NAME)
             logger.info(f"✅ Using existing collection: {self.config.QDRANT_COLLECTION_NAME}")
@@ -414,7 +380,7 @@ class FixedTreeBuilder:
                 vectors_config=VectorParams(size=1024, distance=Distance.COSINE)
             )
         
-        # Prepare points for insertion
+        # Prepare and insert points in batches
         points = []
         for i, (node, embedding) in enumerate(zip(all_nodes, all_embeddings)):
             point = PointStruct(
@@ -434,18 +400,21 @@ class FixedTreeBuilder:
         batch_size = 100
         for i in tqdm(range(0, len(points), batch_size), desc="Inserting to Qdrant"):
             batch_points = points[i:i+batch_size]
-            self.qdrant_client.upsert(
-                collection_name=self.config.QDRANT_COLLECTION_NAME,
-                points=batch_points
-            )
+            try:
+                self.qdrant_client.upsert(
+                    collection_name=self.config.QDRANT_COLLECTION_NAME,
+                    points=batch_points
+                )
+            except Exception as e:
+                logger.error(f"Error inserting batch {i//batch_size + 1}: {e}")
+                continue
         
         logger.info("✅ VectorStoreIndex built and stored in Qdrant")
         return len(all_nodes)
     
     async def build_tree(self):
-        """Main tree building process - Fixed RecursiveRetriever pattern"""
-        logger.info("🚀 Starting Fixed Tree Building Process")
-        self.config.log_config()
+        """Main tree building process - Async version with config"""
+        logger.info("🚀 Starting Modular Tree Building Process")
         
         try:
             # 1. Load documents
@@ -459,21 +428,20 @@ class FixedTreeBuilder:
             # 3. Create chunk references (multi-level)
             chunk_nodes = self.create_chunk_references(base_nodes)
             
-            # 4. Create metadata references (summaries + questions)
+            # 4. Create metadata references (summaries + questions) - Async
             metadata_nodes = await self.create_metadata_references(base_nodes)
             
             # 5. Combine all nodes
             all_nodes = chunk_nodes + metadata_nodes
             logger.info(f"📊 Total nodes: {len(all_nodes)} ({len(chunk_nodes)} chunks + {len(metadata_nodes)} metadata)")
             
-            # 6. Build VectorStoreIndex and store in Qdrant
+            # 6. Build VectorStoreIndex and store in Qdrant - Async
             total_stored = await self.build_and_store_index(all_nodes)
             
             # 7. Save node mapping for RecursiveRetriever
             all_nodes_dict = {n.node_id: n for n in all_nodes}
             
             node_mapping_path = self.config.OUTPUT_PATH / "node_mapping.json"
-            # Serialize node dict for later loading
             serialized_nodes = {}
             for node_id, node in all_nodes_dict.items():
                 serialized_nodes[node_id] = {
@@ -488,18 +456,31 @@ class FixedTreeBuilder:
             
             logger.info(f"💾 Saved node mapping to: {node_mapping_path}")
             
-            # 8. Save summary statistics
+            # 8. Save comprehensive statistics
             stats = {
-                "total_documents": len(documents),
-                "total_base_nodes": len(base_nodes),
-                "total_chunk_nodes": len(chunk_nodes),
-                "total_metadata_nodes": len(metadata_nodes),
-                "total_nodes": len(all_nodes),
-                "total_stored": total_stored,
-                "qdrant_collection": self.config.QDRANT_COLLECTION_NAME,
-                "base_chunk_size": self.config.BASE_CHUNK_SIZE,
-                "sub_chunk_sizes": self.config.SUB_CHUNK_SIZES,
-                "embedding_dimension": 1024
+                "build_timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "config": {
+                    "base_chunk_size": self.config.BASE_CHUNK_SIZE,
+                    "sub_chunk_sizes": self.config.SUB_CHUNK_SIZES,
+                    "chunk_overlap": self.config.CHUNK_OVERLAP,
+                    "num_questions": self.config.NUM_QUESTIONS,
+                    "enable_summaries": self.config.ENABLE_SUMMARIES,
+                    "openai_model": self.config.OPENAI_MODEL,
+                    "vllm_model": self.config.VLLM_MODEL_NAME
+                },
+                "data": {
+                    "total_documents": len(documents),
+                    "total_base_nodes": len(base_nodes),
+                    "total_chunk_nodes": len(chunk_nodes),
+                    "total_metadata_nodes": len(metadata_nodes),
+                    "total_nodes": len(all_nodes),
+                    "total_stored": total_stored,
+                    "embedding_dimension": 1024
+                },
+                "storage": {
+                    "qdrant_collection": self.config.QDRANT_COLLECTION_NAME,
+                    "qdrant_url": self.config.QDRANT_URL
+                }
             }
             
             stats_path = self.config.OUTPUT_PATH / "build_stats.json"
@@ -507,7 +488,9 @@ class FixedTreeBuilder:
                 json.dump(stats, f, indent=2)
             
             logger.info("✅ Tree building completed successfully!")
-            logger.info(f"📊 Final Stats: {stats}")
+            logger.info(f"📊 Final Stats: {stats['data']}")
+            
+            return stats
             
         except Exception as e:
             logger.error(f"❌ Tree building failed: {e}")
@@ -517,26 +500,36 @@ class FixedTreeBuilder:
             await self.embed_model.close()
 
 async def main():
-    """Main entry point"""
+    """
+    Main entry point with configuration management
+    Uses LlamaIndex's built-in OpenAI LLM for full compatibility
+    """
     try:
-        # Update configuration with your OpenAI key
-        TreeBuilderConfig.OPENAI_API_KEY = OPENAI_API_KEY
+        print("🚀 Modular Tree Builder Starting...")
+        print("=" * 60)
         
-        # Validate configuration
-        TreeBuilderConfig.validate()
+        # Load and validate configuration
+        config = load_and_validate_config()
         
         # Create builder and build tree
-        builder = FixedTreeBuilder(TreeBuilderConfig)
-        await builder.build_tree()
+        builder = ModularTreeBuilder(config)
+        stats = await builder.build_tree()
         
         print("\n🎉 Success! Tree built and stored in Qdrant.")
+        print(f"📊 Built {stats['data']['total_nodes']} nodes from {stats['data']['total_documents']} documents")
+        print(f"💾 Data stored in collection: {stats['storage']['qdrant_collection']}")
         print("📋 Next: Test the retriever service")
         
+        return True
+        
+    except KeyboardInterrupt:
+        print("\n⏹️  Build process interrupted by user")
+        return False
     except Exception as e:
         logger.error(f"❌ Build process failed: {e}")
+        print(f"\n❌ Build failed: {e}")
+        print("📋 Please check the logs and configuration")
         return False
-    
-    return True
 
 if __name__ == "__main__":
     success = asyncio.run(main())

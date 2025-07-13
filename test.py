@@ -102,11 +102,11 @@ async def test_complete_system():
         # 4. Test Single Query Retrieval
         print("\n4️⃣ Testing Single Query Retrieval...")
         test_queries = [
-            "yapay zeka nedir?",
-            "makine öğrenmesi algoritmaları",
+            "97 startups",
+            "zep puanlama",
             "Zulficore sistem nedir?",
-            "quantum entanglement",
-            "VLLM embedding service"
+            "swordgeist nedir",
+            "haydar baş kimdir",
         ]
         
         for i, query in enumerate(test_queries[:3], 1):  # Test first 3 queries
