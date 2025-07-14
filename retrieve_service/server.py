@@ -582,8 +582,13 @@ async def get_stats():
 # =============================================================================
 # MAIN
 # =============================================================================
+# =============================================================================
+# MAIN WITH WORKERS
+# =============================================================================
 
 if __name__ == "__main__":
+    import os
+    
     logger.info("=" * 60)
     logger.info("🚀 Official LlamaIndex RecursiveRetriever Service")
     logger.info("=" * 60)
@@ -591,12 +596,22 @@ if __name__ == "__main__":
     logger.info(f"VLLM URL: {RetrieveServiceConfig.VLLM_BASE_URL}")
     logger.info(f"Server: {RetrieveServiceConfig.HOST}:{RetrieveServiceConfig.PORT}")
     logger.info("🎯 Pattern: Official LlamaIndex RecursiveRetriever")
+    
+    # Worker configuration
+    workers = int(os.getenv("WORKERS", 2))  # Default 2 workers
+    logger.info(f"Workers: {workers}")
+    logger.info(f"Note: Each worker will load its own node_dict and connect to VLLM/Qdrant")
     logger.info("=" * 60)
     
     uvicorn.run(
-        app,
+        "server:app",  # Import string format for workers
         host=RetrieveServiceConfig.HOST,
         port=RetrieveServiceConfig.PORT,
         log_level="info",
         access_log=True,
+        workers=workers,
+        # Use uvloop for better async performance  
+        loop="uvloop",
+        # HTTP/2 support
+        http="h11",
     )
