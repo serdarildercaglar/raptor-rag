@@ -1,0 +1,251 @@
+{
+  "summary": {
+    "total_tests": 7,
+    "passed_tests": 6,
+    "failed_tests": 1,
+    "success_rate": 85.71428571428571,
+    "overall_status": "FAIL"
+  },
+  "performance": {
+    "latency": {
+      "avg_ms": 30.657244403846562,
+      "p95_ms": 30.657244403846562,
+      "max_ms": 30.657244403846562,
+      "min_ms": 30.657244403846562
+    },
+    "throughput": {
+      "avg_qps": 18.557606494763515,
+      "max_qps": 32.61871767817887,
+      "min_qps": 4.496495311348161
+    }
+  },
+  "test_results": [
+    {
+      "test": "service_health",
+      "status": "FAIL",
+      "duration": 0.0030039900011615828,
+      "details": {
+        "status": 405,
+        "error": "{\"detail\":\"Method Not Allowed\"}"
+      },
+      "error": null
+    },
+    {
+      "test": "single_query_performance",
+      "status": "PASS",
+      "duration": 0.1532862220192328,
+      "details": {
+        "total_queries": 5,
+        "avg_latency_ms": 30.657244403846562,
+        "p95_latency_ms": 39.0212866012007,
+        "success_rate": 100.0,
+        "throughput_qps": 32.61871767817887
+      },
+      "error": null
+    },
+    {
+      "test": "batch_processing_stress",
+      "status": "PASS",
+      "duration": 0,
+      "details": {
+        "batch_tests": 5,
+        "successful_batches": 5,
+        "avg_throughput_qps": 51.52532746886094,
+        "batch_results": [
+          {
+            "batch_size": 5,
+            "duration_ms": 101.39746399363503,
+            "throughput_qps": 49.31089795612504,
+            "success": true,
+            "total_results": 13
+          },
+          {
+            "batch_size": 10,
+            "duration_ms": 188.29902600555215,
+            "throughput_qps": 53.10701925619701,
+            "success": true,
+            "total_results": 23
+          },
+          {
+            "batch_size": 20,
+            "duration_ms": 418.5440919973189,
+            "throughput_qps": 47.784690746818896,
+            "success": true,
+            "total_results": 46
+          },
+          {
+            "batch_size": 50,
+            "duration_ms": 946.5626599994721,
+            "throughput_qps": 52.82270483818566,
+            "success": true,
+            "total_results": 123
+          },
+          {
+            "batch_size": 100,
+            "duration_ms": 1831.45740198961,
+            "throughput_qps": 54.601324546978084,
+            "success": true,
+            "total_results": 255
+          }
+        ]
+      },
+      "error": null
+    },
+    {
+      "test": "concurrent_async_load",
+      "status": "PASS",
+      "duration": 0,
+      "details": {
+        "concurrent_tests": 4,
+        "avg_success_rate": 100.0,
+        "max_throughput_qps": 55.07048271982253,
+        "concurrent_results": [
+          {
+            "concurrent_requests": 10,
+            "total_duration_sec": 0.22583486000075936,
+            "success_rate": 100.0,
+            "avg_latency_ms": 201.02458470209967,
+            "p95_latency_ms": 225.32962990226224,
+            "throughput_qps": 44.28014346397352,
+            "memory_usage_mb": 45.4765625,
+            "cpu_usage_percent": 0.0
+          },
+          {
+            "concurrent_requests": 25,
+            "total_duration_sec": 0.5130327160004526,
+            "success_rate": 100.0,
+            "avg_latency_ms": 326.75131592026446,
+            "p95_latency_ms": 489.54327060200734,
+            "throughput_qps": 48.72983577908498,
+            "memory_usage_mb": 45.4765625,
+            "cpu_usage_percent": 0.0
+          },
+          {
+            "concurrent_requests": 50,
+            "total_duration_sec": 0.9410927429998992,
+            "success_rate": 100.0,
+            "avg_latency_ms": 623.0440108195762,
+            "p95_latency_ms": 893.4956564524327,
+            "throughput_qps": 53.12972645035619,
+            "memory_usage_mb": 45.8515625,
+            "cpu_usage_percent": 0.0
+          },
+          {
+            "concurrent_requests": 100,
+            "total_duration_sec": 1.81585479300702,
+            "success_rate": 100.0,
+            "avg_latency_ms": 1209.828536050336,
+            "p95_latency_ms": 1715.9980842981895,
+            "throughput_qps": 55.07048271982253,
+            "memory_usage_mb": 46.9765625,
+            "cpu_usage_percent": 0.0
+          }
+        ]
+      },
+      "error": null
+    },
+    {
+      "test": "accuracy_validation",
+      "status": "PASS",
+      "duration": 0,
+      "details": {
+        "total_queries": 20,
+        "successful_queries": 20,
+        "avg_accuracy": 76.25,
+        "category_accuracy": {
+          "protocol_basics": 100.0,
+          "consciousness": 75.0,
+          "prophets": 50.0,
+          "echo_carriers": 100.0,
+          "cosmic_frequency": 100.0,
+          "noah_ark": 100.0,
+          "jesus_miracles": 75.0,
+          "read_command": 100.0,
+          "adam_descent": 100.0,
+          "difficulty_ease": 75.0,
+          "jonah_rescue": 75.0,
+          "echo_construction": 75.0,
+          "mercy_frequency": 100.0,
+          "guidance_vibration": 75.0,
+          "echo_tree": 75.0,
+          "book_message": 25.0,
+          "success_rate": 50.0,
+          "business_model": 50.0,
+          "campus_innovation": 25.0,
+          "future_transformation": 100.0
+        },
+        "accuracy_distribution": {
+          "excellent (>80%)": 8,
+          "good (60-80%)": 7,
+          "fair (40-60%)": 3,
+          "poor (<40%)": 2
+        }
+      },
+      "error": null
+    },
+    {
+      "test": "memory_cpu_stress",
+      "status": "PASS",
+      "duration": 60.04676560399821,
+      "details": {
+        "test_duration_sec": 60.04676560399821,
+        "total_requests": 270,
+        "completed_requests": 270,
+        "failed_requests": 0,
+        "success_rate": 100.0,
+        "avg_memory_mb": 46.9765625,
+        "max_memory_mb": 46.9765625,
+        "avg_cpu_percent": 0.0,
+        "max_cpu_percent": 0.0,
+        "memory_growth_mb": 0.0,
+        "throughput_qps": 4.496495311348161
+      },
+      "error": null
+    },
+    {
+      "test": "error_recovery",
+      "status": "PASS",
+      "duration": 0,
+      "details": {
+        "error_tests": 4,
+        "gracefully_handled": 4,
+        "error_results": [
+          {
+            "test_name": "empty_query",
+            "expected_status": 422,
+            "actual_status": 422,
+            "handled_gracefully": true,
+            "response_time_ms": 2.3989120090845972
+          },
+          {
+            "test_name": "invalid_top_k",
+            "expected_status": 422,
+            "actual_status": 422,
+            "handled_gracefully": true,
+            "response_time_ms": 0.9759670065250248
+          },
+          {
+            "test_name": "oversized_query",
+            "expected_status": 422,
+            "actual_status": 422,
+            "handled_gracefully": true,
+            "response_time_ms": 0.5332389991963282
+          },
+          {
+            "test_name": "invalid_similarity",
+            "expected_status": 422,
+            "actual_status": 422,
+            "handled_gracefully": true,
+            "response_time_ms": 0.8043370035011321
+          }
+        ],
+        "service_recovery": true,
+        "recovery_time_ms": 23.224752003443427
+      },
+      "error": null
+    }
+  ],
+  "recommendations": [
+    "Review document indexing and query processing for better accuracy"
+  ]
+}
